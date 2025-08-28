@@ -1,29 +1,39 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"os"
 )
 
 func main() {
 	file, err := os.Open("messages.txt")
 	if err != nil {
-		fmt.Println("Error opening file:", err)
-		return
+		log.Fatal("Error opening file:", err)
 	}
 	defer file.Close()
 
+	str := ""
 	for {
-		readBytes := make([]byte, 8)
-		_, err = file.Read(readBytes)
+		data := make([]byte, 8)
+		n, err := file.Read(data)
 		if err != nil {
 			if err == io.EOF {
 				break
 			}
-			fmt.Println("Error reading file:", err)
-			return
+			log.Fatal("Error reading file:", err)
 		}
-		fmt.Printf("read: %s\n", readBytes)
+
+		data = data[:n]
+		if i := bytes.IndexByte(data, '\n'); i != -1 {
+			str += string(data[:i])
+			data = data[i+1:]
+			fmt.Printf("read: %s\n", str)
+			str = ""
+		}
+
+		str += string(data)
 	}
 }
