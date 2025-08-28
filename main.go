@@ -1,11 +1,12 @@
 package main
 
 import (
-	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"strings"
 )
 
 func main() {
@@ -13,27 +14,46 @@ func main() {
 	if err != nil {
 		log.Fatal("Error opening file:", err)
 	}
-	defer file.Close()
 
-	str := ""
-	for {
-		data := make([]byte, 8)
-		n, err := file.Read(data)
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			log.Fatal("Error reading file:", err)
-		}
-
-		data = data[:n]
-		if i := bytes.IndexByte(data, '\n'); i != -1 {
-			str += string(data[:i])
-			data = data[i+1:]
-			fmt.Printf("read: %s\n", str)
-			str = ""
-		}
-
-		str += string(data)
+	lines := getLinesChannel(file)
+	for line := range lines {
+		fmt.Printf("read: %s\n", line)
 	}
+}
+
+func getLinesChannel(f io.ReadCloser) <-chan string {
+	lines := make(chan string, 1)
+
+	go func() {
+		defer f.Close()
+		defer close(lines)
+
+		currentLineContents := ""
+		for {
+			buffer := make([]byte, 8)
+			n, err := f.Read(buffer)
+			if err != nil {
+				if currentLineContents != "" {
+					lines <- currentLineContents
+				}
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				log.Printf("error: %s\n", err.Error())
+				return
+			}
+
+			str := string(buffer[:n])
+			parts := strings.Split(str, "\n")
+
+			for i := 0; i < len(parts)-1; i++ {
+				lines <- currentLineContents + parts[i]
+				currentLineContents = ""
+			}
+
+			currentLineContents += parts[len(parts)-1]
+		}
+	}()
+
+	return lines
 }
