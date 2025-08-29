@@ -1,6 +1,8 @@
 package request
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -8,6 +10,8 @@ import (
 
 type Request struct {
 	RequestLine RequestLine
+
+	state requestState
 }
 
 type RequestLine struct {
@@ -16,39 +20,61 @@ type RequestLine struct {
 	Method        string
 }
 
-const separator = "\r\n"
+type requestState int
+
+const (
+	requestStateInitialized requestState = iota
+	requestStateDone
+)
+
+const crlf = "\r\n"
+const bufferSize = 8
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, err
+	buf := make([]byte, bufferSize, bufferSize)
+	readToIndex := 0
+	req := &Request{
+		state: requestStateInitialized,
 	}
-	str := string(data)
-	rl, str, err := parseRequestLine(str)
-	if err != nil {
-		return nil, err
-	}
+	for req.state != requestStateDone {
+		if readToIndex >= len(buf) {
+			newBuf := make([]byte, len(buf)*2)
+			copy(newBuf, buf)
+			buf = newBuf
+		}
 
-	return &Request{
-		RequestLine: *rl,
-	}, nil
+		numBytesRead, err := reader.Read(buf[readToIndex:])
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				req.state = requestStateDone
+				break
+			}
+			return nil, err
+		}
+		readToIndex += numBytesRead
+
+		numBytesParsed, err := req.parse(buf[:readToIndex])
+		if err != nil {
+			return nil, err
+		}
+
+		copy(buf, buf[numBytesParsed:])
+		readToIndex -= numBytesParsed
+	}
+	return req, nil
 }
 
-func parseRequestLine(str string) (*RequestLine, string, error) {
-	idx := strings.Index(str, separator)
+func parseRequestLine(data []byte) (*RequestLine, int, error) {
+	idx := bytes.Index(data, []byte(crlf))
 	if idx == -1 {
-		return nil, "", nil
+		return nil, 0, nil
 	}
-
-	startLine := str[:idx]
-	restOfMsg := str[idx+len(separator):]
-
-	rl, err := requestLineFromString(startLine)
+	requestLineText := string(data[:idx])
+	requestLine, err := requestLineFromString(requestLineText)
 	if err != nil {
-		return nil, "", err
+		return nil, 0, err
 	}
-
-	return rl, restOfMsg, nil
+	return requestLine, idx + 2, nil
 }
 
 func requestLineFromString(str string) (*RequestLine, error) {
@@ -85,4 +111,24 @@ func requestLineFromString(str string) (*RequestLine, error) {
 		RequestTarget: requestTarget,
 		HttpVersion:   versionParts[1],
 	}, nil
+}
+
+func (r *Request) parse(data []byte) (int, error) {
+	switch r.state {
+	case requestStateInitialized:
+		requestLine, n, err := parseRequestLine(data)
+		if err != nil {
+			return 0, err
+		}
+		if n == 0 {
+			return 0, nil
+		}
+		r.RequestLine = *requestLine
+		r.state = requestStateDone
+		return n, nil
+	case requestStateDone:
+		return 0, fmt.Errorf("error: trying to read data in a done state")
+	default:
+		return 0, fmt.Errorf("unknown state")
+	}
 }
