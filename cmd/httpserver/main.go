@@ -1,12 +1,13 @@
 package main
 
 import (
-	"io"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/GircysRomualdas/httpfromtcp/internal/headers"
 	"github.com/GircysRomualdas/httpfromtcp/internal/request"
 	"github.com/GircysRomualdas/httpfromtcp/internal/response"
 	"github.com/GircysRomualdas/httpfromtcp/internal/server"
@@ -15,21 +16,72 @@ import (
 const port = 42069
 
 func main() {
-	server, err := server.Serve(port, func(w io.Writer, req *request.Request) *server.HandlerError {
+	server, err := server.Serve(port, func(w *response.Writer, req *request.Request) {
 		if req.RequestLine.RequestTarget == "/yourproblem" {
-			return &server.HandlerError{
-				StatusCode: response.BadRequest,
-				Message:    "Your problem is not my problem\n",
+			w.WriteStatusLine(response.BadRequest)
+			html := `
+<html>
+  <head>
+    <title>400 Bad Request</title>
+  </head>
+  <body>
+    <h1>Bad Request</h1>
+    <p>Your request honestly kinda sucked.</p>
+  </body>
+</html>
+			`
+			body := []byte(html)
+			h := headers.Headers{
+				"Content-Type":   "text/html",
+				"Content-Length": fmt.Sprintf("%d", len(body)),
+				"Connection":     "close",
 			}
+			w.WriteHeaders(h)
+			w.WriteBody(body)
+
 		} else if req.RequestLine.RequestTarget == "/myproblem" {
-			return &server.HandlerError{
-				StatusCode: response.InternalServerError,
-				Message:    "Woopsie, my bad\n",
+			w.WriteStatusLine(response.InternalServerError)
+			html := `
+<html>
+  <head>
+    <title>500 Internal Server Error</title>
+  </head>
+  <body>
+    <h1>Internal Server Error</h1>
+    <p>Okay, you know what? This one is on me.</p>
+  </body>
+</html>
+			`
+			body := []byte(html)
+			h := headers.Headers{
+				"Content-Type":   "text/html",
+				"Content-Length": fmt.Sprintf("%d", len(body)),
+				"Connection":     "close",
 			}
+			w.WriteHeaders(h)
+			w.WriteBody(body)
 		} else {
-			w.Write([]byte("All good, frfr\n"))
+			w.WriteStatusLine(response.OK)
+			html := `
+<html>
+  <head>
+    <title>200 OK</title>
+  </head>
+  <body>
+    <h1>Success!</h1>
+    <p>Your request was an absolute banger.</p>
+  </body>
+</html>
+			`
+			body := []byte(html)
+			h := headers.Headers{
+				"Content-Type":   "text/html",
+				"Content-Length": fmt.Sprintf("%d", len(body)),
+				"Connection":     "close",
+			}
+			w.WriteHeaders(h)
+			w.WriteBody(body)
 		}
-		return nil
 	})
 	if err != nil {
 		log.Fatalf("Error starting server: %v", err)

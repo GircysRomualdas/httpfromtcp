@@ -1,13 +1,13 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"sync/atomic"
 
+	"github.com/GircysRomualdas/httpfromtcp/internal/headers"
 	"github.com/GircysRomualdas/httpfromtcp/internal/request"
 	"github.com/GircysRomualdas/httpfromtcp/internal/response"
 )
@@ -23,7 +23,7 @@ type HandlerError struct {
 	Message    string
 }
 
-type Handler func(w io.Writer, req *request.Request) *HandlerError
+type Handler func(w *response.Writer, req *request.Request)
 
 func (he *HandlerError) Write(w io.Writer) {
 	response.WriteStatusLine(w, he.StatusCode)
@@ -66,24 +66,31 @@ func (s *Server) Close() error {
 
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
+	responseWriter := response.NewWriter(conn)
 	req, err := request.RequestFromReader(conn)
 	if err != nil {
-		hErr := &HandlerError{
-			StatusCode: response.BadRequest,
-			Message:    err.Error(),
+		responseWriter.WriteStatusLine(response.BadRequest)
+		html := `
+<html>
+  <head>
+    <title>400 Bad Request</title>
+  </head>
+  <body>
+    <h1>Bad Request</h1>
+    <p>Your request honestly kinda sucked.</p>
+  </body>
+</html>
+		`
+		body := []byte(html)
+		h := headers.Headers{
+			"Content-Type":   "text/html",
+			"Content-Length": fmt.Sprintf("%d", len(body)),
+			"Connection":     "close",
 		}
-		hErr.Write(conn)
+		responseWriter.WriteHeaders(h)
+		responseWriter.WriteBody(body)
 		return
 	}
-	buf := bytes.NewBuffer([]byte{})
-	hErr := s.handler(buf, req)
-	if hErr != nil {
-		hErr.Write(conn)
-		return
-	}
-	b := buf.Bytes()
-	response.WriteStatusLine(conn, response.OK)
-	headers := response.GetDefaultHeaders(len(b))
-	response.WriteHeaders(conn, headers)
-	conn.Write(b)
+
+	s.handler(responseWriter, req)
 }
