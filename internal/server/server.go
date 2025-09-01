@@ -2,12 +2,10 @@ package server
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"sync/atomic"
 
-	"github.com/GircysRomualdas/httpfromtcp/internal/headers"
 	"github.com/GircysRomualdas/httpfromtcp/internal/request"
 	"github.com/GircysRomualdas/httpfromtcp/internal/response"
 )
@@ -18,19 +16,7 @@ type Server struct {
 	handler  Handler
 }
 
-type HandlerError struct {
-	StatusCode response.StatusCode
-	Message    string
-}
-
 type Handler func(w *response.Writer, req *request.Request)
-
-func (he *HandlerError) Write(w io.Writer) {
-	response.WriteStatusLine(w, he.StatusCode)
-	headers := response.GetDefaultHeaders(len(he.Message))
-	response.WriteHeaders(w, headers)
-	w.Write([]byte(he.Message))
-}
 
 func Serve(port int, handler Handler) (*Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
@@ -66,31 +52,14 @@ func (s *Server) Close() error {
 
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
-	responseWriter := response.NewWriter(conn)
+	w := response.NewWriter(conn)
 	req, err := request.RequestFromReader(conn)
 	if err != nil {
-		responseWriter.WriteStatusLine(response.BadRequest)
-		html := `
-<html>
-  <head>
-    <title>400 Bad Request</title>
-  </head>
-  <body>
-    <h1>Bad Request</h1>
-    <p>Your request honestly kinda sucked.</p>
-  </body>
-</html>
-		`
-		body := []byte(html)
-		h := headers.Headers{
-			"Content-Type":   "text/html",
-			"Content-Length": fmt.Sprintf("%d", len(body)),
-			"Connection":     "close",
-		}
-		responseWriter.WriteHeaders(h)
-		responseWriter.WriteBody(body)
+		w.WriteStatusLine(response.BadRequest)
+		body := []byte(fmt.Sprintf("Error parsing request: %v", err))
+		w.WriteHeaders(response.GetDefaultHeaders(len(body)))
+		w.WriteBody(body)
 		return
 	}
-
-	s.handler(responseWriter, req)
+	s.handler(w, req)
 }
