@@ -1,11 +1,14 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -52,15 +55,20 @@ func handler(w *response.Writer, req *request.Request) {
 		h := headers.NewHeaders()
 		h.Set("Content-Type", "text/plain")
 		h.Set("Transfer-Encoding", "chunked")
+		h.Set("Trailer", "X-Content-SHA256")
+		h.Set("Trailer", "X-Content-Length")
 		w.WriteHeaders(h)
 
 		buf := make([]byte, 1024)
+		data := make([]byte, 0)
 		for {
 			n, err := res.Body.Read(buf)
 			if n > 0 {
-				if _, werr := w.WriteChunkedBody(buf[:n]); werr != nil {
+
+				if _, err = w.WriteChunkedBody(buf[:n]); err != nil {
 					return
 				}
+				data = append(data, buf[:n]...)
 			}
 			if err == io.EOF {
 				break
@@ -70,6 +78,12 @@ func handler(w *response.Writer, req *request.Request) {
 			}
 		}
 		w.WriteChunkedBodyDone()
+		trailers := headers.NewHeaders()
+		sum := sha256.Sum256(data)
+		hash := hex.EncodeToString(sum[:])
+		trailers.Set("X-Content-SHA256", hash)
+		trailers.Set("X-Content-Length", strconv.Itoa(len(data)))
+		w.WriteTrailers(trailers)
 		return
 	}
 	handler200(w, req)

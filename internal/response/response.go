@@ -69,9 +69,8 @@ func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
-	// size in hex + CRLF
+
 	hdr := []byte(fmt.Sprintf("%x\r\n", len(p)))
-	// build chunk: size, data, CRLF
 	buf := make([]byte, 0, len(hdr)+len(p)+2)
 	buf = append(buf, hdr...)
 	buf = append(buf, p...)
@@ -92,5 +91,16 @@ func (w *Writer) writeAll(b []byte) (int, error) {
 }
 
 func (w *Writer) WriteChunkedBodyDone() (int, error) {
-	return w.writeAll([]byte("0\r\n\r\n"))
+	return w.writeAll([]byte("0\r\n"))
+}
+
+func (w *Writer) WriteTrailers(h headers.Headers) error {
+	for key, value := range h {
+		_, err := w.writer.Write([]byte(key + ": " + value + "\r\n"))
+		if err != nil {
+			return err
+		}
+	}
+	_, err := w.writer.Write([]byte("\r\n"))
+	return err
 }
