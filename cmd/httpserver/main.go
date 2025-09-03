@@ -38,12 +38,10 @@ func handler(w *response.Writer, req *request.Request) {
 	if req.RequestLine.RequestTarget == "/yourproblem" {
 		handler400(w, req)
 		return
-	}
-	if req.RequestLine.RequestTarget == "/myproblem" {
+	} else if req.RequestLine.RequestTarget == "/myproblem" {
 		handler500(w, req)
 		return
-	}
-	if strings.HasPrefix(req.RequestLine.RequestTarget, "/httpbin/") {
+	} else if strings.HasPrefix(req.RequestLine.RequestTarget, "/httpbin/") {
 		target := strings.TrimPrefix(req.RequestLine.RequestTarget, "/httpbin/")
 		res, err := http.Get("https://httpbin.org/" + target)
 		if err != nil {
@@ -85,6 +83,17 @@ func handler(w *response.Writer, req *request.Request) {
 		trailers.Set("X-Content-Length", strconv.Itoa(len(data)))
 		w.WriteTrailers(trailers)
 		return
+	} else if req.RequestLine.RequestTarget == "/video" {
+		w.WriteStatusLine(response.OK)
+		data, err := os.ReadFile("assets/vim.mp4")
+		if err != nil {
+			handler500(w, req)
+			return
+		}
+		h := response.GetDefaultHeaders(len(data))
+		h.Override("Content-Type", "video/mp4")
+		w.WriteHeaders(h)
+		w.WriteBody(data)
 	}
 	handler200(w, req)
 }
