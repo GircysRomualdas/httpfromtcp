@@ -1,11 +1,15 @@
 package main
 
 import (
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
+	"github.com/GircysRomualdas/httpfromtcp/internal/headers"
 	"github.com/GircysRomualdas/httpfromtcp/internal/request"
 	"github.com/GircysRomualdas/httpfromtcp/internal/response"
 	"github.com/GircysRomualdas/httpfromtcp/internal/server"
@@ -34,6 +38,38 @@ func handler(w *response.Writer, req *request.Request) {
 	}
 	if req.RequestLine.RequestTarget == "/myproblem" {
 		handler500(w, req)
+		return
+	}
+	if strings.HasPrefix(req.RequestLine.RequestTarget, "/httpbin/") {
+		target := strings.TrimPrefix(req.RequestLine.RequestTarget, "/httpbin/")
+		res, err := http.Get("https://httpbin.org/" + target)
+		if err != nil {
+			handler500(w, req)
+			return
+		}
+
+		w.WriteStatusLine(response.OK)
+		h := headers.NewHeaders()
+		h.Set("Content-Type", "text/plain")
+		h.Set("Transfer-Encoding", "chunked")
+		w.WriteHeaders(h)
+
+		buf := make([]byte, 1024)
+		for {
+			n, err := res.Body.Read(buf)
+			if n > 0 {
+				if _, werr := w.WriteChunkedBody(buf[:n]); werr != nil {
+					return
+				}
+			}
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return
+			}
+		}
+		w.WriteChunkedBodyDone()
 		return
 	}
 	handler200(w, req)

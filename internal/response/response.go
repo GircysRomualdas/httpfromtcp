@@ -64,3 +64,33 @@ func GetDefaultHeaders(contentLen int) headers.Headers {
 		"content-type":   "text/plain",
 	}
 }
+
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	// size in hex + CRLF
+	hdr := []byte(fmt.Sprintf("%x\r\n", len(p)))
+	// build chunk: size, data, CRLF
+	buf := make([]byte, 0, len(hdr)+len(p)+2)
+	buf = append(buf, hdr...)
+	buf = append(buf, p...)
+	buf = append(buf, '\r', '\n')
+	return w.writeAll(buf)
+}
+
+func (w *Writer) writeAll(b []byte) (int, error) {
+	total := 0
+	for total < len(b) {
+		n, err := w.writer.Write(b[total:])
+		total += n
+		if err != nil {
+			return total, err
+		}
+	}
+	return total, nil
+}
+
+func (w *Writer) WriteChunkedBodyDone() (int, error) {
+	return w.writeAll([]byte("0\r\n\r\n"))
+}
